@@ -1,3 +1,6 @@
+mod transform_to_hapin;
+use transform_to_hapin::transform_to_hapin;
+
 fn main() {
-    println!("Hello, Hapin!");
+    transform_to_hapin("جاقسى 👍 بولادى", false);
 }
