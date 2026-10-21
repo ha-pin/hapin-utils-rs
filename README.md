@@ -1,5 +1,164 @@
 # hapin-utils-rs
 
-Hapin Utils for Rust
+[简体中文](README.zh-CN.md) · [Hapin website](https://hapin.js.org/) · [TypeScript reference](https://github.com/ha-pin/hapin-utils)
 
-> Under developing
+Native Rust implementation of the **hapin-utils 5.0.0** conversion behavior, with `context-v1` segmentation, structured source units, diagnostics and legacy compatibility functions. The Rust crate version is **5.0.0**. Runtime conversion, builds and tests require neither JavaScript/Node.js nor a dictionary.
+
+## Installation
+
+Use the Git repository; this change does not publish a crates.io release:
+
+```toml
+[dependencies]
+hapin-utils-rs = { git = "https://github.com/ha-pin/hapin-utils-rs", branch = "main" }
+```
+
+Pin `rev` to a reviewed commit for reproducible application dependencies. The crate imports as `hapin_utils_rs`. It uses Rust 2021; CI tests the stable Rust toolchain on Linux, macOS and Windows. No minimum Rust version is promised by this release.
+
+## Conversion
+
+```rust
+use hapin_utils_rs::{convert, ConvertOptions, Source, Target};
+
+let result = convert("арзанға", ConvertOptions::new(Source::Cyrillic, Target::Arabic))?;
+assert_eq!(result.text.as_deref(), Some("ارزانعا"));
+
+let result = convert("shanghai", ConvertOptions::new(Source::Hapin, Target::Arabic))?;
+assert_eq!(result.text.as_deref(), Some("شاڭحاي"));
+# Ok::<(), hapin_utils_rs::Error>(())
+```
+
+The seven supported directions are:
+
+| Source | Targets |
+| --- | --- |
+| Hapin | Arabic, IPA_CNA |
+| Arabic | Hapin, IPA_CNA |
+| Cyrillic | Hapin, Arabic, IPA_CNA |
+
+Use `Source::{Hapin, Arabic, Cyrillic}` and `Target::{Hapin, Arabic, IpaCna}`. Other combinations return `Ok(ConversionResult)` with `analysis.status == Status::Error`, `text == None` and an `unsupported-conversion` diagnostic. Cyrillic output is not provided by the reference API.
+
+Conversion consumes original letter units directly. For example, Cyrillic `нғ`, `ңх` and `нг` remain separate source-letter sequences even though simplified Hapin spellings can collide. IPA_CNA is the same broad transcription as the TypeScript library, not a complete phonetic or morphological analyzer.
+
+## Analysis and candidate selection
+
+```rust
+use hapin_utils_rs::{analyze_hapin, convert, AnalyzeOptions, ConvertOptions,
+                     LetterId, Source, Status, Target};
+
+let mut analysis = analyze_hapin("ngh", AnalyzeOptions::default())?;
+let ids: Vec<_> = analysis.units.iter().filter_map(|u| u.id).collect();
+assert_eq!(ids, vec![LetterId::N, LetterId::Gh]);
+assert_eq!(analysis.status, Status::Ambiguous);
+
+// Choose the returned NG + H alternative without reparsing the visible spelling.
+analysis.units = analysis.alternatives[0].units.clone();
+let result = convert(&analysis, ConvertOptions::new(Source::Hapin, Target::Arabic))?;
+assert_eq!(result.text.as_deref(), Some("ڭح"));
+# Ok::<(), hapin_utils_rs::Error>(())
+```
+
+`analyze_hapin` returns `Analysis`: source, original input, units, alternatives, diagnostics, rule version and status. `convert` accepts `&str`, `&String` or `&Analysis`. An existing analysis retains its rule version, units and diagnostics; its source must agree with `ConvertOptions.from`.
+
+The context rules reproduce the reference priorities:
+
+- `ngh`: prefer N + GH, with nine exact source-attested NG + H word forms such as `shanghai`. Extensions such as `shanghaixyz` do not inherit that exception.
+- `ngul`: prefer N + G and expose NG as an alternative. `ngye` / `ngxe` retain competing NG and N + G analyses.
+- Exact source-label conflicts, S + H word exceptions, `ashat`, `shsh`, `hh` and `tsh` overlaps retain the reference defaults and local alternatives.
+
+`SEGMENTATION_RULES` / `segmentation_rules()` expose the versioned evidence metadata. Support counts are source-label observations, not held-out accuracy. They are fixed rules, not runtime dictionary lookup or statistical training.
+
+Each alternative replaces **one** conflict in the preferred path; alternatives do not enumerate combinations of all conflicts. `max_candidates` includes the preferred path and must be 1–64 (default 8). Omitted alternatives produce a `candidate-limit` warning; a limit of 1 does not make ambiguous input unambiguous.
+
+## Options and diagnostics
+
+| Rust option | Default | Behavior |
+| --- | --- | --- |
+| `ConvertOptions.analysis.rules` | `RulesVersion::ContextV1` | `Legacy` selects the old Hapin splitting priority. |
+| `analysis.input_format` | `InputFormat::Plain` | `LegacyBoundaries` consumes existing U+200B as machine boundaries. |
+| `analysis.max_candidates` | `8` | Bounds the preferred path plus local alternatives. |
+| `errors` | `ErrorsMode::Preserve` | `Strict` rejects all non-info diagnostics. |
+| `formatting` | `Formatting::Preserve` | `Legacy` applies the old ASCII-space formatting. |
+
+```rust
+use hapin_utils_rs::{convert, ConvertOptions, ErrorsMode, Source, Target};
+
+let mut options = ConvertOptions::new(Source::Hapin, Target::Arabic);
+options.errors = ErrorsMode::Strict;
+let result = convert("angye", options)?;
+assert!(result.text.is_none());
+assert!(result.analysis.diagnostics.iter().any(|d| d.code == "strict-input"));
+# Ok::<(), hapin_utils_rs::Error>(())
+```
+
+Invalid candidate limits or invalid supplied unit spans return `Err(Error)`. Rust enums prevent unsupported runtime option names; Serde rejects unknown enum strings. Unsupported directions, source mismatches and strict-input failures are returned as diagnostic-bearing results with no partial text.
+
+Preserve mode keeps whitespace, quoted literals, unknown characters and ordinary U+200B characters. Backslash-escaped quotes and unclosed quotes terminate safely; unclosed quotes are preserved and diagnosed. New conversion does not generate hidden boundary markers. Plain-text apostrophes are punctuation, not an input boundary syntax.
+
+Warnings can exist with `Status::Ok`; inspect `diagnostics`, not just `status`. `Ambiguous` indicates competing segmentation and still includes a preferred output in preserve mode. Choosing a candidate retains the original warnings, so strict conversion will still reject them unless the caller explicitly reviews and resolves those diagnostics.
+
+`ConversionResult.losses` reports `source-distinction` and `unencoded-boundary`. A Hapin output string may lose original spelling or boundaries. Keep the structured analysis for subsequent conversion rather than converting through a Hapin display string.
+
+## Unicode and JSON interoperability
+
+All `start` / `end` spans are **UTF-16 code-unit offsets** with an exclusive end, matching JavaScript, not UTF-8 byte indices or scalar indices. For `a😀y`, the `y` span is `[3, 4)`. Use `unit.raw` for source text; do not directly index a Rust string with these offsets. Rust accepts valid UTF-8 strings; unpaired JavaScript surrogate code units cannot be represented by `&str`.
+
+`Analysis`, `ConversionResult`, units, diagnostics and options implement Serde. Their JSON uses the reference's camelCase fields and enum spellings, including `rulesVersion`, `sourceLetter`, `maxCandidates`, `context-v1` and `ipa-cna`. In Rust the result contains `result.analysis`; serialization flattens its fields to the same JSON shape as JavaScript.
+
+## Legacy API mapping
+
+Default wrappers take `&str` and return `String`. Their `_with_options` variants also take `LegacyOptions { clean, easy }` (default: true / false). `easy` affects only Arabic → Hapin. The Hapin wrappers intentionally retain legacy splitting: `transform_hapin_to_arabic("ngh") == "ڭح"`; use `convert` for context rules.
+
+| JavaScript export | Rust default function |
+| --- | --- |
+| `transformHapinToArabic` | `transform_hapin_to_arabic` |
+| `transformHapinToIPA_CNA` | `transform_hapin_to_ipa_cna` |
+| `transformArabicToHapin` | `transform_arabic_to_hapin` |
+| `transformArabicToIPA_CNA` | `transform_arabic_to_ipa_cna` |
+| `transformCyrillicToHapin` | `transform_cyrillic_to_hapin` |
+| `transformCyrillicToArabic` | `transform_cyrillic_to_arabic` |
+| `transformCyrillicToIPA_CNA` | `transform_cyrillic_to_ipa_cna` |
+| `transformHapinToArabicArray` | `transform_hapin_to_arabic_array` |
+| `transformArabicToHapinArray` | `transform_arabic_to_hapin_array` |
+| `transformCyrillicToHapinArray` | `transform_cyrillic_to_hapin_array` |
+
+```rust
+use hapin_utils_rs::{transform_arabic_to_hapin_with_options, LegacyOptions};
+let result = transform_arabic_to_hapin_with_options(
+    "جاقسى! ەرلان", LegacyOptions { clean: true, easy: true });
+assert_eq!(result, "j'a'q's'e'! ye'r'l'a'n");
+```
+
+`clean: false` preserves the historical U+200B serialization, including source-specific separator placement. Array wrappers return `Vec<String>` by splitting that serialization; they are not a replacement for `Analysis.units`. Word-local weak vowels, IPA corrections, punctuation and quoted-text behavior match the corrected 5.0.0 compatibility implementation.
+
+The prototype's `transform_arabic_to_hapin`, `transform_hapin_to_arabic`, `transform_cyrillic_to_hapin` module paths and `utils::utf8` helpers remain available. These old helpers count Unicode scalars; structured API spans use UTF-16. The unfinished prototype scanners and Hello World binary have been replaced by the library implementation.
+
+## Development and verification
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --all-targets
+cargo test --locked --doc
+cargo build --locked --release
+cargo doc --locked --no-deps
+cargo run --locked --example convert
+```
+
+CI runs format, Clippy, tests, doctests and a release build on Linux, macOS and Windows. README Rust examples are doctests.
+
+Committed fixtures are generated by executing the actual TypeScript 5.0.0 package: **2,325 full structured/API cases** plus **1,600 seeded differential cases**. They cover all seven directions, all legacy wrappers and arrays, rule metadata, candidate limits, strict mode, selected analyses, UTF-16 spans, quotes, weak vowels, literals, source distinctions and serialization. Rust also tests malformed supplied analyses and adversarial long input. Fixtures and their source commit are recorded under `tests/fixtures/`; no desktop word list is required.
+
+To intentionally regenerate the reference fixtures (maintainers only):
+
+```sh
+# First build a clean hapin-utils 5.0.0 checkout using its own build command.
+node scripts/generate-parity-fixtures.cjs /absolute/path/to/hapin-utils
+cargo test --locked
+```
+
+Review any fixture changes independently: regenerating snapshots alone does not demonstrate correctness. The reference generator is the only Node-based maintenance tool; it is never called by Cargo or CI. Conversion and tests run entirely in Rust.
+
+## License
+
+MIT. Maintained by Herbert He <Herbert.He0229@gmail.com>.

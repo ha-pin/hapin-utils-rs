@@ -1,17 +1,16 @@
-use utf8_slice;
-
-pub fn get_char (str: &str, idx: u32) -> char {
-    let oc = utf8_slice::slice(str, idx.try_into().unwrap(), (idx + 1).try_into().unwrap()).chars().next();
-    let c = match oc {
-        Some(oc) => {
-            oc
-        },
-        None => todo!(),
-    };
-
-    return c;
+//! Prototype compatibility helpers. Indices here count Unicode scalars, unlike API spans.
+/// Return the scalar at `idx`. Panics if the index is outside the string.
+pub fn get_char(input: &str, idx: u32) -> char {
+    input
+        .chars()
+        .nth(idx as usize)
+        .expect("character index out of bounds")
 }
-
-pub fn get_string_length (s: &str) -> u32 {
-	utf8_slice::len(s) as u32
+/// Count Unicode scalars, preserving the prototype helper's behavior.
+pub fn get_string_length(input: &str) -> u32 {
+    input
+        .chars()
+        .count()
+        .try_into()
+        .expect("string has more than u32::MAX characters")
 }

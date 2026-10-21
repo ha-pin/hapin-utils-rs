@@ -1,0 +1,8 @@
+{
+  "sourcePackage": "hapin-utils",
+  "sourceVersion": "5.0.0",
+  "sourceCommit": "cc2c3947fac13175fa806f761a926edfc37bdcc8",
+  "structuredCases": 2325,
+  "differentialCases": 1600,
+  "seed": "0x48415049"
+}
