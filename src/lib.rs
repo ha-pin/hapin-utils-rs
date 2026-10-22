@@ -34,3 +34,6 @@ pub mod transform_cyrillic_to_hapin {
     };
 }
 pub mod utils;
+
+#[cfg(feature = "wasm")]
+mod wasm;

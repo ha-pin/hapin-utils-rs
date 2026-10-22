@@ -6,7 +6,7 @@
 
 ## 安装
 
-本次只提交 GitHub，不代表已经发布 crates.io。使用 Git 依赖：
+首次 crates.io 发布完成前，使用 Git 依赖：
 
 ```toml
 [dependencies]
@@ -134,7 +134,62 @@ node scripts/generate-parity-fixtures.cjs /absolute/path/to/hapin-utils
 cargo test --locked
 ```
 
-快照变更必须独立审阅，不能只通过重新生成快照消除测试失败。Node 仅用于此维护脚本，不参与 Cargo 构建、运行或 CI。
+快照变更必须独立审阅，不能只通过重新生成快照消除测试失败。此参考快照生成脚本不参与 Cargo 构建或 CI；原生转换与测试均用 Rust，新增 WASM 绑定另有基于 Node 的互操作测试。
+
+## 主分支自动发布与 WASM
+
+推送 `main` 会触发 `.github/workflows/release.yml`：复用 PR 的跨平台检查，构建并测试 WASM，再发布尚不存在的版本。支持 `workflow_dispatch`，配置好凭据后可手动重跑，无须制造空提交。
+
+首次配置：
+
+1. 登录 [crates.io](https://crates.io/me)，验证邮箱并创建 API token。首次发布必须允许创建 `hapin-utils-rs`；后续需要该 crate 的版本发布权限。设置有效期并按需轮换。
+2. 打开[仓库 Actions secrets](https://github.com/ha-pin/hapin-utils-rs/settings/secrets/actions)，新增 Repository secret **`CARGO_REGISTRY_TOKEN`**，值填入 token。不要提交到 Git 或输出到日志。
+3. 推送版本变更到 main，或者在 Actions → **Publish crate and WASM release** → **Run workflow** 手动执行。GitHub Release 使用内置 `GITHUB_TOKEN`，仅 Release job 有 `contents: write`，不需要额外 GitHub PAT。
+
+缺少 token 时，workflow 会发出 warning，并在运行摘要中明确记录 crate **尚未发布**；WASM Release 仍可独立完成。配置好 secret 后重跑即可补发 crate，不会覆盖已存在的 WASM Release。
+
+版本号取自 `Cargo.toml`。发布新版本时修改 package version，执行 `cargo check` 更新 `Cargo.lock`，将二者一起提交 main。crates.io 的已有版本不会重复发布，GitHub 已公开 Release 的文件也不会被同版本后续提交覆盖。修改发布内容应提高版本号。预发布版本会生成 prerelease Release。部分发布失败时应重跑原 workflow；已有标签必须指向原运行的提交，不能偷偷移动标签。
+
+Release 标签为 `v<version>`，资产包括：
+
+- `hapin-utils-rs-<version>-wasm-web.tar.gz`
+- `hapin-utils-rs-<version>-wasm-nodejs.tar.gz`
+- `hapin-utils-rs-<version>-wasm-bundler.tar.gz`
+- `SHA256SUMS`
+
+每个压缩包包含匹配的 `.wasm`、JavaScript 胶水代码、TypeScript 声明、package metadata、README 与 LICENSE。选择对应目标后完整解压，保持 JS 和 WASM 文件在一起。本流程只上传 GitHub Release，不发布 npm 包。
+
+浏览器使用 web 包，通过 HTTP 服务访问，并为 WASM 配置 `application/wasm` MIME：
+
+```js
+import init, { convert, analyzeHapin, segmentationRules } from './wasm-web/hapin_utils_rs.js';
+await init();
+console.log(convert('арзанға', { from: 'cyrillic', to: 'arabic' }).text);
+console.log(analyzeHapin('ngh', {}).alternatives);
+console.log(segmentationRules());
+```
+
+Node.js 使用 nodejs 包：
+
+```js
+const { convert } = require('./wasm-nodejs/hapin_utils_rs.js');
+console.log(convert('арзанға', { from: 'cyrillic', to: 'arabic' }).text);
+```
+
+WASM 暴露 `convert`、`analyzeHapin`、`segmentationRules()`，以及 TypeScript 同名的七个 `transform*` 和三个 Array 函数；结果对象结构一致。`convert` 接受文本或分析对象。WASM 绑定互操作测试使用 Node；默认原生 crate 不依赖 JS 运行时，WASM 依赖仅通过可选 `wasm` feature 引入。
+
+本地验证：
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack --version 0.15.0 --locked
+python3 scripts/build-wasm.py
+node scripts/test-wasm.cjs
+python3 scripts/package-wasm.py
+python3 -m unittest discover -s scripts -p 'test_*.py'
+```
+
+Node 和 web 真实 WASM 绑定分别执行 2,325 个完整对照案例，通过后才上传构建资产。仅真实 404 被当作版本不存在，其他网络／权限故障会失败；资产损坏或标签指向其他提交时也会停止。Release 先以草稿组装和校验，再公开，标签作者仍使用 Herbert He。
 
 ## 许可
 

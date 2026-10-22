@@ -10,9 +10,21 @@ readme = "README.md"
 keywords = ["hapin", "kazakh", "transliteration", "ipa"]
 categories = ["text-processing", "internationalization"]
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen"]
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 unicode-general-category = "1"
+wasm-bindgen = { version = "0.2.129", optional = true }
+serde-wasm-bindgen = { version = "0.6.5", optional = true }
 
 [dev-dependencies]
 serde_json = "1"

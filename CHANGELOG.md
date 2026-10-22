@@ -10,4 +10,7 @@
 - Add English/Simplified Chinese READMEs, tested examples, cross-platform CI and 3,925 TypeScript oracle cases.
 - Remove the placeholder binary and unused utf8_slice dependency; retain prototype module paths and Unicode scalar helpers.
 
-The source is pushed to GitHub; a crates.io publication is a separate maintainer action.
+- Add optional WASM bindings and web/Node.js/bundler packages, checked against the structured reference corpus.
+- Add version-gated main-branch crates.io publication and recoverable GitHub Releases with checksums.
+
+Crate publication requires the configured CARGO_REGISTRY_TOKEN repository secret.

@@ -1,1 +1,6 @@
 /target
+
+/pkg/
+/release-dist/
+
+__pycache__/

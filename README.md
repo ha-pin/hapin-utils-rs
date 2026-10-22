@@ -6,7 +6,7 @@ Native Rust implementation of the **hapin-utils 5.0.0** conversion behavior, wit
 
 ## Installation
 
-Use the Git repository; this change does not publish a crates.io release:
+Before the first successful crates.io publication, use the Git repository:
 
 ```toml
 [dependencies]
@@ -157,7 +157,62 @@ node scripts/generate-parity-fixtures.cjs /absolute/path/to/hapin-utils
 cargo test --locked
 ```
 
-Review any fixture changes independently: regenerating snapshots alone does not demonstrate correctness. The reference generator is the only Node-based maintenance tool; it is never called by Cargo or CI. Conversion and tests run entirely in Rust.
+Review any fixture changes independently: regenerating snapshots alone does not demonstrate correctness. The reference generator is never called by Cargo or CI. Native conversion and its tests run entirely in Rust; the optional WASM adapter has separate Node-based interoperability tests.
+
+## Automatic publishing and WASM
+
+Pushing `main` runs `.github/workflows/release.yml`. It calls the same cross-platform checks used by pull requests, builds and tests WASM, and only then publishes missing versions. `workflow_dispatch` can retry the current main version without making another commit.
+
+One-time crates.io setup:
+
+1. Sign in to [crates.io](https://crates.io/me), verify your email and create an API token. For the first release it must permit creating `hapin-utils-rs`; later releases require publishing permission for that crate. Choose an expiration and rotate the token when needed.
+2. In [repository Actions secrets](https://github.com/ha-pin/hapin-utils-rs/settings/secrets/actions), add a repository secret named **`CARGO_REGISTRY_TOKEN`** containing that token. Do not commit it or paste it into logs.
+3. Push a version change to main, or open Actions → **Publish crate and WASM release** → **Run workflow** after configuring the secret. GitHub Releases use the built-in `GITHUB_TOKEN`, with `contents: write` limited to the release job; no personal GitHub token is required.
+
+If the crates.io secret is absent, the workflow emits a warning and records **not published** in its summary; it does not claim a successful crate publication. WASM release can still succeed. Once the secret is set, rerun the workflow: existing WASM releases are left intact and the missing crate publication is attempted.
+
+`Cargo.toml` is the version source. To publish the next release, change its package version, run `cargo check` to update `Cargo.lock`, and commit both to main. An existing crates.io version is skipped because it is immutable. An existing public GitHub Release is also skipped; its files are not replaced by later same-version commits. Bump the version when changing release contents. Prerelease Cargo versions create prerelease GitHub Releases. For a failed partial release, rerun the original workflow; an existing tag must point to that exact commit.
+
+The release is named `v<version>` and contains:
+
+- `hapin-utils-rs-<version>-wasm-web.tar.gz`
+- `hapin-utils-rs-<version>-wasm-nodejs.tar.gz`
+- `hapin-utils-rs-<version>-wasm-bundler.tar.gz`
+- `SHA256SUMS`
+
+Each target archive contains its `.wasm` binary, matching JavaScript glue, TypeScript declarations, package metadata, README and license. Download and extract the appropriate archive as a directory; keep its JS and WASM files together. This workflow uploads to GitHub Release; it does not publish an npm package.
+
+For a browser, serve the web archive via HTTP with the WASM MIME type `application/wasm`:
+
+```js
+import init, { convert, analyzeHapin, segmentationRules } from './wasm-web/hapin_utils_rs.js';
+await init();
+console.log(convert('арзанға', { from: 'cyrillic', to: 'arabic' }).text);
+console.log(analyzeHapin('ngh', {}).alternatives);
+console.log(segmentationRules());
+```
+
+For Node.js, use the nodejs archive:
+
+```js
+const { convert } = require('./wasm-nodejs/hapin_utils_rs.js');
+console.log(convert('арзанға', { from: 'cyrillic', to: 'arabic' }).text);
+```
+
+The WASM facade exports `convert`, `analyzeHapin`, `segmentationRules()` and the seven camelCase `transform*` functions plus three Array functions from the TypeScript API. It returns the same serializable object shapes. `convert` accepts text or an analysis object; missing optional analysis options use the defaults. WASM adapter/runtime tests use Node, while the default native Rust crate still has no JavaScript runtime requirement. The `wasm` Cargo feature is optional.
+
+Local WASM verification:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack --version 0.15.0 --locked
+python3 scripts/build-wasm.py
+node scripts/test-wasm.cjs
+python3 scripts/package-wasm.py
+python3 -m unittest discover -s scripts -p 'test_*.py'
+```
+
+The real Node and web WASM bindings each run the 2,325 full oracle cases before artifacts can be uploaded. Release planning fails on registry/network errors other than a genuine 404; invalid assets or a tag pointing to another commit stop release creation. All public releases are first assembled and verified as drafts. The configured tag author remains Herbert He.
 
 ## License
 
