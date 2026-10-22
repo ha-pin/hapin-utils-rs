@@ -1,19 +1,45 @@
 # hapin-utils-rs
 
-[English](README.md) · [Hapin 官网](https://hapin.js.org/)
+[English](README.md) · [Hapin 官网](https://hapin.js.org/) · [TypeScript 参考实现](https://github.com/ha-pin/hapin-utils) · [WASM 下载](https://github.com/ha-pin/hapin-utils-rs/releases/tag/v5.0.0)
 
-完整移植 **hapin-utils 5.0.0** 对外转换行为的原生 Rust 工具包，包含 `context-v1` 切分、结构化字母单元、诊断、损失报告及旧版兼容接口。Rust 包版本为 **5.0.0**。运行、构建和测试均不依赖 JavaScript、Node.js 或桌面词库。
+[![检查与发布](https://github.com/ha-pin/hapin-utils-rs/actions/workflows/release.yml/badge.svg)](https://github.com/ha-pin/hapin-utils-rs/actions/workflows/release.yml)
+
+完整移植 **hapin-utils 5.0.0** 对外转换行为的原生 Rust 工具包，包含 `context-v1` 切分、结构化字母单元、诊断、损失报告及旧版兼容接口。Rust 包版本为 **5.0.0**。原生转换、原生构建和原生测试不依赖 JavaScript、Node.js 或桌面词库。可选的 WebAssembly 包让浏览器、Node.js 和兼容 bundler 使用同一套 Rust 核心。
+
+## 目录
+
+- [安装与可用状态](#安装)
+- [基本转换](#基本转换)
+- [分析、切分和候选](#分析切分和候选)
+- [选项、状态与错误](#选项状态与错误)
+- [Unicode 与 JSON](#unicode-与-json)
+- [旧版兼容接口](#旧版兼容接口)
+- [开发与验证](#开发与验证)
+- [主分支自动发布](#主分支自动发布)
+- [WebAssembly 包](#webassembly-包)
+- [许可](#许可)
 
 ## 安装
 
-首次 crates.io 发布完成前，使用 Git 依赖：
+截至 **2026-10-22** 核验，[WASM v5.0.0](https://github.com/ha-pin/hapin-utils-rs/releases/tag/v5.0.0) 已公开，Rust crate 尚未发布到 crates.io。GitHub workflow 成功或存在 GitHub Release，不代表 crate 已上传。
+
+原生 Rust 依赖可以使用已发布的 Git 标签：
 
 ```toml
 [dependencies]
-hapin-utils-rs = { git = "https://github.com/ha-pin/hapin-utils-rs", branch = "main" }
+hapin-utils-rs = { git = "https://github.com/ha-pin/hapin-utils-rs", tag = "v5.0.0" }
 ```
 
-应用需要固定依赖时，改用已审阅提交的 `rev`。Rust 导入名为 `hapin_utils_rs`。项目使用 Rust 2021 edition，CI 在 Linux、macOS、Windows 的 stable 工具链上验证；本版本尚未声明最低 Rust 版本。
+需要开发版时，将 `tag` 改成 `branch = "main"`；也可以用 `rev` 选择已审阅的具体提交。应用应提交自己的 `Cargo.lock`，记录实际解析的 Git revision。
+
+当 [crates.io](https://crates.io/crates/hapin-utils-rs) 上实际出现 5.0.0 后，可以改成 registry 依赖：
+
+```toml
+[dependencies]
+hapin-utils-rs = "5.0.0"
+```
+
+上例以成功发布为前提；crate 尚不可用时请使用 Git 依赖。Rust 导入名为 `hapin_utils_rs`。项目使用 Rust 2021 edition，CI 在 Linux、macOS、Windows 的 stable 工具链上验证；本版本尚未声明最低 Rust 版本。
 
 ## 基本转换
 
@@ -115,15 +141,17 @@ Hapin 旧接口保留旧切分：`transform_hapin_to_arabic("ngh")` 返回 `ڭح
 
 ```sh
 cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked --all-targets
+cargo clippy --locked --all-features --all-targets -- -D warnings
+cargo test --locked --all-features --all-targets
 cargo test --locked --doc
 cargo build --locked --release
 cargo doc --locked --no-deps
 cargo run --locked --example convert
 ```
 
-CI 在 Linux、macOS、Windows 上运行格式检查、Clippy、测试、文档示例和 release 构建。英文 README 中的 Rust 示例作为 doctest 编译执行。
+原生开发使用 stable Rust。完整 WASM／发布检查额外使用 **Python 3.11+**、**Node.js 24** 和 **wasm-pack 0.15.0**。`cargo test --locked` 验证默认原生 feature；上面的命令还会在主机上编译、测试可选 WASM feature。
+
+CI 在 Linux、macOS、Windows 上运行格式检查、Clippy、测试、文档示例和 release 构建。英文 README 的 Rust 示例作为 doctest 编译执行。PR 使用 `.github/workflows/check.yml`，main 推送通过 `.github/workflows/release.yml` 复用相同检查；发布凭据只在验证后的发布 job 中使用。
 
 已提交 **2,325 个完整结构化/API 对照案例**及 **1,600 个确定性随机差异案例**，由真实 TypeScript 5.0.0 执行生成，覆盖全部方向、兼容接口与数组、规则元数据、严格模式、候选、UTF-16 位置、弱音、引号、来源差异和序列化。另有 Rust 原生的非法输入及长字符串测试。来源版本、提交与随机种子记录在 `tests/fixtures/metadata.json`。
 
@@ -136,7 +164,7 @@ cargo test --locked
 
 快照变更必须独立审阅，不能只通过重新生成快照消除测试失败。此参考快照生成脚本不参与 Cargo 构建或 CI；原生转换与测试均用 Rust，新增 WASM 绑定另有基于 Node 的互操作测试。
 
-## 主分支自动发布与 WASM
+## 主分支自动发布
 
 推送 `main` 会触发 `.github/workflows/release.yml`：复用 PR 的跨平台检查，构建并测试 WASM，再发布尚不存在的版本。支持 `workflow_dispatch`，配置好凭据后可手动重跑，无须制造空提交。
 
@@ -150,6 +178,16 @@ cargo test --locked
 
 版本号取自 `Cargo.toml`。发布新版本时修改 package version，执行 `cargo check` 更新 `Cargo.lock`，将二者一起提交 main。crates.io 的已有版本不会重复发布，GitHub 已公开 Release 的文件也不会被同版本后续提交覆盖。修改发布内容应提高版本号。预发布版本会生成 prerelease Release。部分发布失败时应重跑原 workflow；已有标签必须指向原运行的提交，不能偷偷移动标签。
 
+## WebAssembly 包
+
+[下载 v5.0.0](https://github.com/ha-pin/hapin-utils-rs/releases/tag/v5.0.0)，按运行环境选择目标：
+
+| 目标 | 压缩包 | 初始化方式 |
+| --- | --- | --- |
+| 浏览器／显式加载 ES module | [web](https://github.com/ha-pin/hapin-utils-rs/releases/download/v5.0.0/hapin-utils-rs-5.0.0-wasm-web.tar.gz) | 调用 API 前先 `await init()`。 |
+| Node.js／CommonJS | [nodejs](https://github.com/ha-pin/hapin-utils-rs/releases/download/v5.0.0/hapin-utils-rs-5.0.0-wasm-nodejs.tar.gz) | `require()` 同步加载 WASM。 |
+| 已配置 `.wasm` 导入的 bundler | [bundler](https://github.com/ha-pin/hapin-utils-rs/releases/download/v5.0.0/hapin-utils-rs-5.0.0-wasm-bundler.tar.gz) | 由 bundler 处理生成的 WASM import。 |
+
 Release 标签为 `v<version>`，资产包括：
 
 - `hapin-utils-rs-<version>-wasm-web.tar.gz`
@@ -159,7 +197,26 @@ Release 标签为 `v<version>`，资产包括：
 
 每个压缩包包含匹配的 `.wasm`、JavaScript 胶水代码、TypeScript 声明、package metadata、README 与 LICENSE。选择对应目标后完整解压，保持 JS 和 WASM 文件在一起。本流程只上传 GitHub Release，不发布 npm 包。
 
-浏览器使用 web 包，通过 HTTP 服务访问，并为 WASM 配置 `application/wasm` MIME：
+压缩包内文件直接位于根目录，没有 `wasm-web` 或 `wasm-nodejs` 父目录。
+
+将 [SHA256SUMS](https://github.com/ha-pin/hapin-utils-rs/releases/download/v5.0.0/SHA256SUMS) 与三个压缩包放在同一目录，解压前校验：
+
+```sh
+sha256sum --check SHA256SUMS       # Linux
+# macOS 可以使用：
+shasum -a 256 --check SHA256SUMS
+```
+
+校验通过后，将每个目标分别解压到独立目录：
+
+```sh
+mkdir -p wasm-web wasm-nodejs wasm-bundler
+tar -xzf hapin-utils-rs-5.0.0-wasm-web.tar.gz -C wasm-web
+tar -xzf hapin-utils-rs-5.0.0-wasm-nodejs.tar.gz -C wasm-nodejs
+tar -xzf hapin-utils-rs-5.0.0-wasm-bundler.tar.gz -C wasm-bundler
+```
+
+浏览器使用 web 包，通过 HTTP 服务访问，并为 WASM 配置 `application/wasm` MIME。不要通过 `file://` 直接打开模块；首次调用 API 前初始化一次：
 
 ```js
 import init, { convert, analyzeHapin, segmentationRules } from './wasm-web/hapin_utils_rs.js';
@@ -176,9 +233,39 @@ const { convert } = require('./wasm-nodejs/hapin_utils_rs.js');
 console.log(convert('арзанға', { from: 'cyrillic', to: 'arabic' }).text);
 ```
 
+兼容 bundler 从 bundler 包导入：
+
+```js
+import { convert } from './wasm-bundler/hapin_utils_rs.js';
+console.log(convert('арзанға', { from: 'cyrillic', to: 'arabic' }).text);
+```
+
+bundler 需要通过自身 WASM 支持或插件处理生成的静态 `.wasm` import。不支持时改用 web 包并显式初始化。nodejs 包是 CommonJS；应用设置 `"type": "module"` 时，使用 Node 的 `createRequire` 加载，避免把它的 JS 当作 ES module。
+
 WASM 暴露 `convert`、`analyzeHapin`、`segmentationRules()`，以及 TypeScript 同名的七个 `transform*` 和三个 Array 函数；结果对象结构一致。`convert` 接受文本或分析对象。WASM 绑定互操作测试使用 Node；默认原生 crate 不依赖 JS 运行时，WASM 依赖仅通过可选 `wasm` feature 引入。
 
-本地验证：
+JavaScript 选项使用扁平的 camelCase 字段，区别于 Rust 中的 `ConvertOptions.analysis`：
+
+| Rust | WASM JavaScript |
+| --- | --- |
+| `analysis.rules` | `rules` |
+| `analysis.input_format` | `inputFormat` |
+| `analysis.max_candidates` | `maxCandidates` |
+| `errors`、`formatting`、`from`、`to` | 字段名相同。 |
+
+```js
+const result = convert('angye', {
+  from: 'hapin', to: 'arabic', rules: 'context-v1',
+  inputFormat: 'plain', maxCandidates: 8,
+  errors: 'strict', formatting: 'preserve',
+});
+console.log(result.text); // null：严格模式拒绝未解决的切分歧义
+console.log(result.diagnostics);
+```
+
+WASM `convert` 将 `diagnostics`、`units` 等分析字段直接返回在顶层；原生 Rust 通过 `result.analysis` 访问。WASM 的 `segmentationRules()` 是函数，TypeScript 参考实现还以导出数据形式提供规则。无效选项或外部传入的非法分析会抛出异常；严格模式等带诊断的失败返回 `text: null`。
+
+安装上述前置依赖后，可在本地验证 WASM：
 
 ```sh
 rustup target add wasm32-unknown-unknown
@@ -189,7 +276,7 @@ python3 scripts/package-wasm.py
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-Node 和 web 真实 WASM 绑定分别执行 2,325 个完整对照案例，通过后才上传构建资产。仅真实 404 被当作版本不存在，其他网络／权限故障会失败；资产损坏或标签指向其他提交时也会停止。Release 先以草稿组装和校验，再公开，标签作者仍使用 Herbert He。
+Node 和 web 真实 WASM 绑定分别执行 2,325 个完整对照案例，通过后才上传构建资产。仅真实 404 被当作版本不存在，其他网络／权限故障会失败；资产损坏或标签指向其他提交时也会停止。Release 先以草稿组装和校验，再公开。即使按 tag 的 API 不返回草稿，也能通过认证后的 Release 列表恢复；标签作者仍使用 Herbert He。
 
 ## 许可
 
