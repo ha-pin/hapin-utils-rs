@@ -24,6 +24,21 @@ def api(endpoint):
             return None
         raise RuntimeError(f"GitHub lookup failed with HTTP {error.code}") from None
 
+def find_release(repository, tag):
+    release = api(f"repos/{repository}/releases/tags/{tag}")
+    if release is not None:
+        return release
+    # GitHub's by-tag endpoint may hide drafts even from a workflow token.
+    # The authenticated list endpoint includes drafts owned by this repository.
+    for page in range(1, 101):
+        releases = api(f"repos/{repository}/releases?per_page=100&page={page}") or []
+        for candidate in releases:
+            if candidate["tag_name"] == tag:
+                return candidate
+        if len(releases) < 100:
+            return None
+    raise RuntimeError("Release lookup exceeded 100 pages")
+
 def main():
     version = tomllib.loads((ROOT / "Cargo.toml").read_text())["package"]["version"]
     tag = "v" + version
@@ -36,7 +51,7 @@ def main():
     for asset in assets:
         assert hashlib.sha256(asset.read_bytes()).hexdigest() == expected_sums[asset.name], f"Bad checksum: {asset.name}"
     assets.append(sums)
-    release = api(f"repos/{repository}/releases/tags/{tag}")
+    release = find_release(repository, tag)
     if release and not release["draft"]:
         print(f"Published {tag} already exists; leaving immutable release assets unchanged")
         return
@@ -52,7 +67,9 @@ def main():
         run("gh", "release", "create", tag, "--repo", repository, "--verify-tag", "--draft", "--title", "hapin-utils-rs " + tag, "--notes", "Native Rust crate and web, Node.js, bundler WASM packages. See README for crates.io publishing status and usage. Verify assets with SHA256SUMS.")
     run("gh", "release", "upload", tag, *map(str, assets), "--repo", repository, "--clobber")
     # Inspect uploaded asset names/sizes before making a recovered draft public.
-    uploaded = api(f"repos/{repository}/releases/tags/{tag}")
+    uploaded = find_release(repository, tag)
+    if uploaded is None:
+        raise RuntimeError("Uploaded draft release could not be found")
     actual = {a["name"]: a["size"] for a in uploaded["assets"]}
     for asset in assets:
         assert actual.get(asset.name) == asset.stat().st_size

@@ -41,6 +41,13 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(result["release_exists"],"false")
             self.assertEqual(result["prerelease"],"true")
 
+    def test_draft_hidden_by_tag_endpoint_is_found_via_list(self):
+        draft = {"draft":True,"tag_name":"v5.0.0","assets":[]}
+        with patch.object(publish,"api",side_effect=[None,[draft]]):
+            self.assertEqual(publish.find_release("ha-pin/hapin-utils-rs","v5.0.0"),draft)
+        with patch.object(publish,"api",side_effect=[None,[{"draft":True,"tag_name":"other"}]]):
+            self.assertIsNone(publish.find_release("ha-pin/hapin-utils-rs","v5.0.0"))
+
     def assets(self, root):
         (root/"Cargo.toml").write_text('[package]\nname="hapin-utils-rs"\nversion="5.0.0"\n')
         out=root/"release-dist";out.mkdir()
